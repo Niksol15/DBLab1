@@ -40,7 +40,6 @@ public:
     ~DataBase();
 
 private:
-    std::fstream masterIndex;
     std::fstream masterFile;
     std::fstream slaveFile;
     std::ofstream log;
@@ -95,13 +94,20 @@ private:
     bool isSlaveAlreadyExist(int slave_iterator, int slave_num, int s_id);
 
     int getSlavePosById(int m_id, int s_id); // -1 => slave doesn`t exist
+
     void decrementSlave(int m_id);
 
     void rewriteIndex();
 
-    void cleanMasterFl();
+    void readIndex();
 
-    void cleanSlaveFl();
+    void readDeletedMasters();
+
+    void readDeletedSlaves();
+
+    void rewriteDeletedMasters();
+
+    void rewriteDeletedSlaves();
 };
 
 

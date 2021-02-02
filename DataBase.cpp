@@ -14,6 +14,8 @@ namespace {
     constexpr char kMasterIndexName[] = "GameStudio.ind";
     constexpr char kSlaveFileName[] = "Game.fl";
     constexpr char kLogFileName[] = "log.txt";
+    constexpr char kDeletedMasterFilename[] = "deletedMasters.fl";
+    constexpr char kDeletedSlaveFilename[] = "deletedSlaves.fl";
 } //DataBaseConst
 
 namespace {
@@ -34,11 +36,9 @@ namespace {
 
 namespace {
     constexpr char WrongFormatError[] = "Wrong command format\n";
-    constexpr char BadIndex[] = "Something wrong with index file\n";
     constexpr char KeyDuplicateInsertError[] = "Key duplicates detected while insert, try again\n";
     constexpr char KeyDuplicateConstructorError[] = "Key duplicates detected in constructor, fatal error\n";
     constexpr char UndefinedCalled[] = "Undefined method called\n";
-    //constexpr char WrongMatchingMethod[] = "Wrong matching method\n";
     constexpr char CharLiteralIsTooLongError[] = "Char literal is too long, max length 50\n";
     constexpr char MasterDoesntExist[] = " Master with this id doesn`t exist\n";
     constexpr char SlaveDoesntExist[] = " Slave with this id doesn`t exist for this master\n";
@@ -47,18 +47,34 @@ namespace {
     constexpr char NonExistingField[] = "Non existing field";
 } //Help
 
-DataBase::DataBase() : masterIndex(kMasterIndexName, ios::binary | ios::in | ios::out),
-                       masterFile(kMasterFileName, ios::binary | ios::in | ios::out),
+DataBase::DataBase() : masterFile(kMasterFileName, ios::binary | ios::in | ios::out),
                        slaveFile(kSlaveFileName, ios::binary | ios::in | ios::out),
                        log(kLogFileName) {
+    readIndex();
+    readDeletedMasters();
+    readDeletedSlaves();
+}
+
+DataBase::~DataBase() {
+    rewriteIndex();
+    rewriteDeletedMasters();
+    rewriteDeletedSlaves();
+}
+
+void DataBase::readIndex() {
+    ifstream masterIndex(kMasterIndexName, ios::binary);
     if (!masterIndex) {
-        cout << BadIndex;
-        exit(0);
+        cout << "Index empty\n";
+        return;
     }
     while (masterIndex.peek() != EOF) {
         int key, pos;
         masterIndex.read(reinterpret_cast<char *>(&key), sizeof(int));
         masterIndex.read(reinterpret_cast<char *>(&pos), sizeof(int));
+        if (pos % sizeof(GameStudio) != 0) {
+            cout << "Wrong pos in master file: " << pos << "\n";
+            continue;
+        }
         if (idToPos.count(key)) {
             cout << KeyDuplicateConstructorError << endl;
             exit(0);
@@ -67,24 +83,65 @@ DataBase::DataBase() : masterIndex(kMasterIndexName, ios::binary | ios::in | ios
     }
 }
 
-//TODO Add shrinkToFit
-DataBase::~DataBase() {
-    if (masterIndex.bad()) {
-        cout << "Problem with saving\n";
+void DataBase::readDeletedMasters() {
+    ifstream deletedMStream(kDeletedMasterFilename, ios::binary);
+    if (!deletedMStream) {
+        cout << "Deleted masters empty\n";
         return;
     }
-    rewriteIndex();
-    cleanMasterFl();
-    cleanSlaveFl();
+    while (deletedMStream.peek() != EOF) {
+        int val;
+        deletedMStream.read(reinterpret_cast<char *>(&val), sizeof(int));
+        if (val % sizeof(GameStudio) != 0) {
+            cout << "Wrong pos in deleted masters file: " << val << "\n";
+            continue;
+        }
+        deletedMasters.push(val);
+    }
 }
 
+void DataBase::readDeletedSlaves() {
+    ifstream deletedSStream(kDeletedSlaveFilename, ios::binary);
+    if (!deletedSStream) {
+        cout << "Deleted slaves empty\n";
+        return;
+    }
+    while (deletedSStream.peek() != EOF) {
+        int val;
+        deletedSStream.read(reinterpret_cast<char *>(&val), sizeof(int));
+        if (val % sizeof(Game) != 0) {
+            cout << "Wrong pos in deleted slaves file: " << val << "\n";
+            continue;
+        }
+        deletedSlaves.push(val);
+    }
+}
+
+
 void DataBase::rewriteIndex() {
-    masterIndex.clear();
-    masterIndex.seekg(0, ios::beg);
+    ofstream masterIndex(kMasterIndexName, ios::binary | ios::trunc);
     for (auto[ckey, value]: idToPos) {
         int key = ckey;
         masterIndex.write(reinterpret_cast<char *>(&key), sizeof(key));
         masterIndex.write(reinterpret_cast<char *>(&value), sizeof(value));
+    }
+}
+
+void DataBase::rewriteDeletedMasters() {
+    ofstream mstream(kDeletedMasterFilename, ios::binary | ios::trunc);
+    while (!deletedMasters.empty() && !mstream.bad()) {
+        int val = deletedMasters.front();
+        mstream.write(reinterpret_cast<char *>(&val), sizeof(val));
+        deletedMasters.pop();
+    }
+}
+
+void DataBase::rewriteDeletedSlaves() {
+    ofstream sstream(kDeletedSlaveFilename, ios::binary | ios::trunc);
+    while (!deletedSlaves.empty() && !sstream.bad()) {
+        int val = deletedSlaves.front();
+        sstream.write(reinterpret_cast<char *>(&val), sizeof(val));
+        deletedSlaves.pop();
     }
 }
 
@@ -254,7 +311,6 @@ void DataBase::DelM(int id) {
     masterFile.read(reinterpret_cast<char *>(&slaveIterator), sizeof(int));
     int numOfSlaves;
     masterFile.read(reinterpret_cast<char *>(&numOfSlaves), sizeof(int));
-    cout << "Deleted id pointer to slave: " << slaveIterator << " num of slaves: " << numOfSlaves << "\n";
     for (int i = 0; i < numOfSlaves; ++i) {
         slaveFile.seekp(slaveIterator + sizeof(int));
         int s_id;
@@ -621,11 +677,4 @@ void DataBase::updateSlaveGenre(int m_id, int s_id, const std::string &value) {
     cout << "Successfully updated\n";
 }
 
-void DataBase::cleanMasterFl() {
-    //TODO
-}
-
-void DataBase::cleanSlaveFl() {
-    //TODO
-}
 
